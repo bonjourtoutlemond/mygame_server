@@ -206,6 +206,8 @@ if exist ".git" (
 ) else (
     echo [INFO] No independent server .git directory found. A normal run would initialize one.
 )
+
+pause
 exit /b 0
 
 :fail
@@ -227,5 +229,5 @@ echo   --no-pull          Do not pull before commit.
 echo   --no-push          Commit locally but do not push.
 echo   --dry-run          Show what would happen without changing git state.
 echo   --status-only      Print status and remote information only.
-pause
+
 exit /b 0

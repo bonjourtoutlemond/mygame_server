@@ -227,4 +227,5 @@ echo   --no-pull          Do not pull before commit.
 echo   --no-push          Commit locally but do not push.
 echo   --dry-run          Show what would happen without changing git state.
 echo   --status-only      Print status and remote information only.
+pause
 exit /b 0

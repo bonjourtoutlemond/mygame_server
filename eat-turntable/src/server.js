@@ -120,8 +120,8 @@ async function initDb() {
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
       username VARCHAR(64) NOT NULL,
       password VARCHAR(255) NOT NULL DEFAULT '',
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      created_at DATETIME NOT NULL,
+      updated_at DATETIME NOT NULL,
       PRIMARY KEY (id),
       UNIQUE KEY uk_users_username (username)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -129,8 +129,8 @@ async function initDb() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS user_weight_settings (
       user_id BIGINT UNSIGNED NOT NULL,
-      settings_json JSON NOT NULL,
-      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      settings_json LONGTEXT NOT NULL,
+      updated_at DATETIME NOT NULL,
       PRIMARY KEY (user_id),
       CONSTRAINT fk_weight_settings_user
         FOREIGN KEY (user_id) REFERENCES users (id)
@@ -143,8 +143,8 @@ async function initDb() {
       user_id BIGINT UNSIGNED NOT NULL,
       choice_name VARCHAR(128) NOT NULL,
       choice_weight INT NOT NULL,
-      snapshot_json JSON NOT NULL,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      snapshot_json LONGTEXT NOT NULL,
+      created_at DATETIME NOT NULL,
       PRIMARY KEY (id),
       KEY idx_spin_history_user_created (user_id, created_at),
       CONSTRAINT fk_spin_history_user
@@ -161,11 +161,11 @@ async function findOrCreateUser(username, password = "") {
   }
 
   await pool.execute(
-    `INSERT INTO users (username, password)
-     VALUES (?, ?)
+    `INSERT INTO users (username, password, created_at, updated_at)
+     VALUES (?, ?, NOW(), NOW())
      ON DUPLICATE KEY UPDATE
        password = IF(password = '', VALUES(password), password),
-       updated_at = CURRENT_TIMESTAMP`,
+       updated_at = NOW()`,
     [name, String(password || "").slice(0, 255)]
   );
   const [rows] = await pool.execute("SELECT id, username FROM users WHERE username = ?", [name]);
@@ -196,9 +196,9 @@ async function getWeights(userId) {
 async function saveWeights(userId, items) {
   const normalized = normalizeItems(items);
   await pool.execute(
-    `INSERT INTO user_weight_settings (user_id, settings_json)
-     VALUES (?, ?)
-     ON DUPLICATE KEY UPDATE settings_json = VALUES(settings_json), updated_at = CURRENT_TIMESTAMP`,
+    `INSERT INTO user_weight_settings (user_id, settings_json, updated_at)
+     VALUES (?, ?, NOW())
+     ON DUPLICATE KEY UPDATE settings_json = VALUES(settings_json), updated_at = NOW()`,
     [userId, JSON.stringify(normalized)]
   );
   return normalized;
@@ -255,7 +255,7 @@ async function handleApi(req, res, url) {
     const items = await getWeights(user.id);
     const winner = pickWeighted(items);
     await pool.execute(
-      "INSERT INTO spin_history (user_id, choice_name, choice_weight, snapshot_json) VALUES (?, ?, ?, ?)",
+      "INSERT INTO spin_history (user_id, choice_name, choice_weight, snapshot_json, created_at) VALUES (?, ?, ?, ?, NOW())",
       [user.id, winner.name, winner.weight, JSON.stringify(items)]
     );
     send(res, 200, { ok: true, user, winner, items });

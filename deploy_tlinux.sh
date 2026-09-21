@@ -18,7 +18,7 @@ BASE_DIR="${BASE_DIR:-$(dirname "$SCRIPT_DIR")}"
 SERVER_DIR="${SERVER_DIR:-$SCRIPT_DIR}"
 CLIENT_DIR="${CLIENT_DIR:-$BASE_DIR/client}"
 SERVER_REPO_URL="${SERVER_REPO_URL:-https://github.com/bonjourtoutlemond/mygame_server}"
-CLIENT_REPO_URL="${CLIENT_REPO_URL:-}"
+CLIENT_REPO_URL="${CLIENT_REPO_URL:-https://github.com/bonjourtoutlemond/mygame_client.git}"
 SERVER_REPO_REF="${SERVER_REPO_REF:-main}"
 CLIENT_REPO_REF="${CLIENT_REPO_REF:-main}"
 
@@ -70,6 +70,24 @@ is_cmd_available() {
   command -v "$1" >/dev/null 2>&1
 }
 
+detect_server_ip() {
+  local ip_addr=""
+
+  if command -v ip >/dev/null 2>&1; then
+    ip_addr="$(ip route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i == "src") {print $(i + 1); exit}}')"
+  fi
+
+  if [[ -z "$ip_addr" ]] && command -v hostname >/dev/null 2>&1; then
+    ip_addr="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  fi
+
+  if [[ -z "$ip_addr" ]]; then
+    ip_addr="127.0.0.1"
+  fi
+
+  printf '%s' "$ip_addr"
+}
+
 usage() {
   cat <<USAGE
 Usage:
@@ -79,7 +97,7 @@ Usage:
 
 Environment:
   SERVER_REPO_URL      Git URL for server repo. Default: https://github.com/bonjourtoutlemond/mygame_server
-  CLIENT_REPO_URL      Git URL for client repo. Optional if CLIENT_DIR already exists.
+  CLIENT_REPO_URL      Git URL for client repo. Default: https://github.com/bonjourtoutlemond/mygame_client.git
   SERVER_REPO_REF      Branch/tag, default main.
   CLIENT_REPO_REF      Branch/tag, default main.
   BASE_DIR             Default /data/home/user00/mygame.
@@ -255,7 +273,7 @@ clone_or_update() {
 
 pull_code() {
   clone_or_update "$SERVER_REPO_URL" "$SERVER_REPO_REF" "$SERVER_DIR" "server"
-  # 仅在设置了 CLIENT_REPO_URL 时才拉取 client
+  # 仅在设置了 CLIENT_REPO_URL 时才拉取 client；默认会拉取 mygame_client。
   if [[ -n "$CLIENT_REPO_URL" ]]; then
     clone_or_update "$CLIENT_REPO_URL" "$CLIENT_REPO_REF" "$CLIENT_DIR" "client"
   else
@@ -394,7 +412,7 @@ start_app() {
   sudo_cmd systemctl restart mariadb
   sudo_cmd systemctl restart rsyslog || true
   sudo_cmd systemctl restart eat-turntable
-  log "启动完成！访问 http://SERVER_IP:$APP_PORT"
+  log "启动完成！访问 http://$(detect_server_ip):$APP_PORT"
 }
 
 case "$ACTION" in

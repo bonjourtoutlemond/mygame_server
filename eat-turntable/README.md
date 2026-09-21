@@ -65,8 +65,8 @@ On the cloud server:
 ```bash
 curl -fsSL -o deploy_tlinux.sh https://example.com/deploy_tlinux.sh
 chmod +x deploy_tlinux.sh
-SERVER_REPO_URL=https://example.com/eat-server.git \
-CLIENT_REPO_URL=https://example.com/eat-client.git \
+SERVER_REPO_URL=https://github.com/bonjourtoutlemond/mygame_server.git \
+CLIENT_REPO_URL=https://github.com/bonjourtoutlemond/mygame_client.git \
 MYSQL_APP_PASSWORD='change-me' \
 ./deploy_tlinux.sh all
 ```

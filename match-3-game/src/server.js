@@ -836,11 +836,13 @@ function safeStaticPath(urlPath) {
 function serveStatic(req, res) {
   const filePath = safeStaticPath(req.url || "/");
   if (!filePath) {
+    log("static_forbidden", { url: req.url || "/" });
     send(res, 403, "Forbidden", "text/plain; charset=utf-8");
     return;
   }
   fs.readFile(filePath, (error, content) => {
     if (error) {
+      log("static_error", { url: req.url || "/", filePath, error: error.code || error.message });
       send(res, error.code === "ENOENT" ? 404 : 500, error.code === "ENOENT" ? "Not found" : error.message, "text/plain; charset=utf-8");
       return;
     }
@@ -852,6 +854,11 @@ async function main() {
   await initDb();
   const server = http.createServer((req, res) => {
     const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
+    if (url.pathname === "/") {
+      res.writeHead(302, { location: "/match-3-game/" });
+      res.end();
+      return;
+    }
     if (url.pathname.startsWith("/api/")) {
       handleApi(req, res, url).catch((error) => {
         log("api_error", { path: url.pathname, error: error.message });

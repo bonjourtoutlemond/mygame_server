@@ -175,6 +175,7 @@ exit /b 0
 echo [INFO] Staging server files...
 "!GIT_EXE!" add --all -- .
 if errorlevel 1 exit /b 1
+if exist "match-3-game\deploy_tlinux.sh" "!GIT_EXE!" update-index --chmod=+x match-3-game/deploy_tlinux.sh
 "!GIT_EXE!" reset -q -- node_modules node_modules/ data data/ logs logs/ 2>nul
 
 echo [INFO] Current server status:

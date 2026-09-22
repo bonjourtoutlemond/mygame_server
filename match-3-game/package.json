@@ -1,0 +1,17 @@
+{
+  "name": "match-3-game-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Match-3 game server with MySQL-backed accounts, energy, levels, skins, and albums.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "check": "node --check src/server.js"
+  },
+  "dependencies": {
+    "mysql2": "^3.11.5"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>星糖消消乐</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Match-3 Game</p>
+          <h1>星糖消消乐</h1>
+        </div>
+        <div class="player-card">
+          <img id="activeSkin" alt="" />
+          <div>
+            <strong id="playerName">未登录</strong>
+            <span id="playerStats">Lv.1 · 精力 0/0</span>
+          </div>
+        </div>
+      </header>
+
+      <section class="login-panel" id="loginPanel">
+        <div>
+          <p class="eyebrow">Account</p>
+          <h2>登录后开始挑战</h2>
+        </div>
+        <input id="usernameInput" type="text" value="test" maxlength="64" placeholder="账号" />
+        <input id="passwordInput" type="password" value="test" maxlength="255" placeholder="密码" />
+        <button id="loginButton" type="button">进入游戏</button>
+      </section>
+
+      <section class="game-layout">
+        <aside class="side-panel">
+          <div class="progress-card">
+            <div class="level-ring">
+              <strong id="levelNumber">1</strong>
+              <span>LEVEL</span>
+            </div>
+            <div class="progress-copy">
+              <span id="expText">0 / 150 EXP</span>
+              <div class="bar"><i id="expBar"></i></div>
+              <span id="energyText">精力 0 / 100</span>
+              <div class="bar energy"><i id="energyBar"></i></div>
+            </div>
+          </div>
+
+          <nav class="tabs" aria-label="主菜单">
+            <button class="tab is-active" type="button" data-view="levels">关卡</button>
+            <button class="tab" type="button" data-view="cards">卡册</button>
+            <button class="tab" type="button" data-view="albums">收集册</button>
+          </nav>
+
+          <div class="view is-active" id="levelsView">
+            <div class="section-title">
+              <h2>星路关卡</h2>
+              <span id="unlockText">解锁至 1</span>
+            </div>
+            <div class="level-list" id="levelList"></div>
+          </div>
+
+          <div class="view" id="cardsView">
+            <div class="section-title">
+              <h2>皮肤卡片册</h2>
+              <span id="cardCount">0 / 0</span>
+            </div>
+            <div class="skin-grid" id="skinGrid"></div>
+          </div>
+
+          <div class="view" id="albumsView">
+            <div class="section-title">
+              <h2>收集册</h2>
+              <span>集齐领奖</span>
+            </div>
+            <div class="album-list" id="albumList"></div>
+          </div>
+        </aside>
+
+        <section class="board-panel">
+          <div class="hud">
+            <div>
+              <span>当前关卡</span>
+              <strong id="currentLevelName">请选择关卡</strong>
+            </div>
+            <div>
+              <span>目标分</span>
+              <strong id="targetScore">0</strong>
+            </div>
+            <div>
+              <span>分数</span>
+              <strong id="scoreText">0</strong>
+            </div>
+            <div>
+              <span>剩余</span>
+              <strong id="timerText">--</strong>
+            </div>
+          </div>
+
+          <div class="objective-strip" id="objectiveText">选择已解锁关卡后开始。</div>
+
+          <div class="board-wrap">
+            <div class="board" id="board"></div>
+            <button class="start-button" id="startButton" type="button">开始挑战</button>
+          </div>
+
+          <div class="tool-row">
+            <button id="shuffleButton" type="button">洗牌</button>
+            <button id="hintButton" type="button">提示</button>
+            <a href="./asset-studio.html">素材工坊</a>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <div class="modal-backdrop" id="modal" aria-hidden="true">
+      <section class="modal">
+        <button class="modal-close" id="modalClose" type="button" aria-label="关闭">x</button>
+        <img id="modalImage" alt="" />
+        <p class="eyebrow" id="modalKicker">Result</p>
+        <h2 id="modalTitle">完成</h2>
+        <p id="modalBody"></p>
+        <button id="modalAction" type="button">知道了</button>
+      </section>
+    </div>
+
+    <script src="./script.js"></script>
+  </body>
+</html>

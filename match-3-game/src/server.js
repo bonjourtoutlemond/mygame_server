@@ -7,7 +7,8 @@ const { Pool: PgPool } = require("pg");
 
 const PORT = Number(process.env.PORT || 8090);
 const HOST = process.env.HOST || "0.0.0.0";
-const CLIENT_ROOT = process.env.CLIENT_ROOT || path.resolve(__dirname, "../../../client");
+const BUNDLED_CLIENT_ROOT = path.resolve(__dirname, "../public");
+const CLIENT_ROOT = process.env.CLIENT_ROOT || BUNDLED_CLIENT_ROOT;
 const DB_CLIENT = String(process.env.DB_CLIENT || (process.env.DATABASE_URL ? "postgres" : "mysql")).toLowerCase();
 const DB_HOST = process.env.DB_HOST || "127.0.0.1";
 const DB_PORT = Number(process.env.DB_PORT || (DB_CLIENT === "postgres" ? 5432 : 3306));
@@ -1068,9 +1069,9 @@ async function handleApi(req, res, url) {
   send(res, 404, { ok: false, error: "api route not found" });
 }
 
-function safeStaticPath(urlPath) {
+function safeStaticPath(urlPath, rootPath = CLIENT_ROOT) {
   const decoded = decodeURIComponent(urlPath.split("?")[0]);
-  const clientRoot = path.resolve(CLIENT_ROOT);
+  const clientRoot = path.resolve(rootPath);
   const clientBase = path.basename(clientRoot) === "eat" ? path.dirname(clientRoot) : clientRoot;
   let root = clientBase;
   let relative = decoded === "/" ? "match-3-game/index.html" : decoded.replace(/^\/+/, "");
@@ -1089,14 +1090,12 @@ function safeStaticPath(urlPath) {
   return pathFromRoot && !pathFromRoot.startsWith("..") && !path.isAbsolute(pathFromRoot) ? filePath : null;
 }
 
-function serveStatic(req, res) {
-  const filePath = safeStaticPath(req.url || "/");
-  if (!filePath) {
-    log("static_forbidden", { url: req.url || "/" });
-    send(res, 403, "Forbidden", "text/plain; charset=utf-8");
-    return;
-  }
+function readStaticFile(filePath, req, res, fallbackPath = null) {
   fs.readFile(filePath, (error, content) => {
+    if (error && error.code === "ENOENT" && fallbackPath && fallbackPath !== filePath) {
+      readStaticFile(fallbackPath, req, res);
+      return;
+    }
     if (error) {
       log("static_error", { url: req.url || "/", filePath, error: error.code || error.message });
       send(res, error.code === "ENOENT" ? 404 : 500, error.code === "ENOENT" ? "Not found" : error.message, "text/plain; charset=utf-8");
@@ -1104,6 +1103,17 @@ function serveStatic(req, res) {
     }
     send(res, 200, content, mimeTypes[path.extname(filePath).toLowerCase()] || "application/octet-stream");
   });
+}
+
+function serveStatic(req, res) {
+  const filePath = safeStaticPath(req.url || "/");
+  if (!filePath) {
+    log("static_forbidden", { url: req.url || "/" });
+    send(res, 403, "Forbidden", "text/plain; charset=utf-8");
+    return;
+  }
+  const fallbackPath = CLIENT_ROOT === BUNDLED_CLIENT_ROOT ? null : safeStaticPath(req.url || "/", BUNDLED_CLIENT_ROOT);
+  readStaticFile(filePath, req, res, fallbackPath);
 }
 
 async function main() {

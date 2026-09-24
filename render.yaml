@@ -2,7 +2,6 @@ services:
   - type: web
     name: match-3-game
     runtime: node
-    rootDir: match-3-game
     buildCommand: yarn install --production=true
     startCommand: yarn start
     envVars:

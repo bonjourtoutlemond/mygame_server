@@ -4,6 +4,8 @@
   "private": true,
   "description": "Server monorepo for the eat-turntable and match-3-game Node services.",
   "scripts": {
+    "postinstall": "node scripts/ensure-match3-client.js",
+    "prepare:client": "node scripts/ensure-match3-client.js",
     "start": "yarn --cwd match-3-game start",
     "start:match3": "yarn --cwd match-3-game start",
     "start:eat": "yarn --cwd eat-turntable start",

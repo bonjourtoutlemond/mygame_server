@@ -3,12 +3,14 @@ const http = require("http");
 const path = require("path");
 const { URL } = require("url");
 const mysql = require("mysql2/promise");
+const { Pool: PgPool } = require("pg");
 
 const PORT = Number(process.env.PORT || 8090);
 const HOST = process.env.HOST || "0.0.0.0";
 const CLIENT_ROOT = process.env.CLIENT_ROOT || path.resolve(__dirname, "../../../client");
+const DB_CLIENT = String(process.env.DB_CLIENT || (process.env.DATABASE_URL ? "postgres" : "mysql")).toLowerCase();
 const DB_HOST = process.env.DB_HOST || "127.0.0.1";
-const DB_PORT = Number(process.env.DB_PORT || 3306);
+const DB_PORT = Number(process.env.DB_PORT || (DB_CLIENT === "postgres" ? 5432 : 3306));
 const DB_USER = process.env.DB_USER || "eat_game";
 const DB_PASSWORD = process.env.DB_PASSWORD || "";
 const DB_NAME = process.env.DB_NAME || "eat_turntable";
@@ -98,6 +100,7 @@ const mimeTypes = {
 };
 
 let pool;
+let dbDialect = DB_CLIENT === "postgres" || DB_CLIENT === "postgresql" || DB_CLIENT === "pg" ? "postgres" : "mysql";
 
 function log(message, detail = {}) {
   const line = { time: new Date().toISOString(), service: "match-3-game", message, ...detail };
@@ -164,8 +167,36 @@ function normalizeItems(items) {
   return normalized.length ? normalized.slice(0, 64) : defaultItems;
 }
 
-async function initDb() {
-  pool = mysql.createPool({
+function toPgSql(sql) {
+  let index = 0;
+  return sql.replace(/\?/g, () => `$${++index}`);
+}
+
+function createDbAdapter() {
+  if (dbDialect === "postgres") {
+    const pgPool = new PgPool({
+      connectionString: process.env.DATABASE_URL || undefined,
+      host: process.env.DATABASE_URL ? undefined : DB_HOST,
+      port: process.env.DATABASE_URL ? undefined : DB_PORT,
+      user: process.env.DATABASE_URL ? undefined : DB_USER,
+      password: process.env.DATABASE_URL ? undefined : DB_PASSWORD,
+      database: process.env.DATABASE_URL ? undefined : DB_NAME,
+      max: 10,
+      ssl: process.env.DB_SSL === "true" || process.env.PGSSLMODE === "require" ? { rejectUnauthorized: false } : undefined,
+    });
+    return {
+      async query(sql, params = []) {
+        const result = await pgPool.query(toPgSql(sql), params);
+        return [result.rows, result.fields];
+      },
+      async execute(sql, params = []) {
+        const result = await pgPool.query(toPgSql(sql), params);
+        return [result.rows, result.fields];
+      },
+    };
+  }
+
+  return mysql.createPool({
     host: DB_HOST,
     port: DB_PORT,
     user: DB_USER,
@@ -175,8 +206,17 @@ async function initDb() {
     connectionLimit: 10,
     charset: "utf8mb4",
   });
+}
 
-  await pool.query(`
+async function runSchema(statements) {
+  for (const statement of statements) {
+    await pool.query(statement);
+  }
+}
+
+async function initMysqlSchema() {
+  await runSchema([
+    `
     CREATE TABLE IF NOT EXISTS users (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
       username VARCHAR(64) NOT NULL,
@@ -186,8 +226,8 @@ async function initDb() {
       PRIMARY KEY (id),
       UNIQUE KEY uk_users_username (username)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-  `);
-  await pool.query(`
+  `,
+    `
     CREATE TABLE IF NOT EXISTS user_weight_settings (
       user_id BIGINT UNSIGNED NOT NULL,
       settings_json LONGTEXT NOT NULL,
@@ -197,8 +237,8 @@ async function initDb() {
         FOREIGN KEY (user_id) REFERENCES users (id)
         ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-  `);
-  await pool.query(`
+  `,
+    `
     CREATE TABLE IF NOT EXISTS spin_history (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
       user_id BIGINT UNSIGNED NOT NULL,
@@ -212,8 +252,8 @@ async function initDb() {
         FOREIGN KEY (user_id) REFERENCES users (id)
         ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-  `);
-  await pool.query(`
+  `,
+    `
     CREATE TABLE IF NOT EXISTS match3_profiles (
       user_id BIGINT UNSIGNED NOT NULL,
       level INT NOT NULL,
@@ -231,8 +271,8 @@ async function initDb() {
         FOREIGN KEY (user_id) REFERENCES users (id)
         ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-  `);
-  await pool.query(`
+  `,
+    `
     CREATE TABLE IF NOT EXISTS match3_level_progress (
       user_id BIGINT UNSIGNED NOT NULL,
       level_id INT NOT NULL,
@@ -249,8 +289,8 @@ async function initDb() {
         FOREIGN KEY (user_id) REFERENCES users (id)
         ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-  `);
-  await pool.query(`
+  `,
+    `
     CREATE TABLE IF NOT EXISTS match3_skin_cards (
       user_id BIGINT UNSIGNED NOT NULL,
       skin_id VARCHAR(64) NOT NULL,
@@ -264,8 +304,8 @@ async function initDb() {
         FOREIGN KEY (user_id) REFERENCES users (id)
         ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-  `);
-  await pool.query(`
+  `,
+    `
     CREATE TABLE IF NOT EXISTS match3_albums (
       user_id BIGINT UNSIGNED NOT NULL,
       album_id VARCHAR(64) NOT NULL,
@@ -278,8 +318,8 @@ async function initDb() {
         FOREIGN KEY (user_id) REFERENCES users (id)
         ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-  `);
-  await pool.query(`
+  `,
+    `
     CREATE TABLE IF NOT EXISTS match3_sessions (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
       user_id BIGINT UNSIGNED NOT NULL,
@@ -297,8 +337,8 @@ async function initDb() {
         FOREIGN KEY (user_id) REFERENCES users (id)
         ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-  `);
-  await pool.query(`
+  `,
+    `
     CREATE TABLE IF NOT EXISTS match3_results (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
       session_id BIGINT UNSIGNED NOT NULL,
@@ -316,7 +356,141 @@ async function initDb() {
         FOREIGN KEY (user_id) REFERENCES users (id)
         ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-  `);
+  `,
+  ]);
+}
+
+async function initPostgresSchema() {
+  await runSchema([
+    `
+    CREATE TABLE IF NOT EXISTS users (
+      id BIGSERIAL PRIMARY KEY,
+      username VARCHAR(64) NOT NULL UNIQUE,
+      password VARCHAR(255) NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL
+    )
+  `,
+    `
+    CREATE TABLE IF NOT EXISTS user_weight_settings (
+      user_id BIGINT NOT NULL PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+      settings_json TEXT NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL
+    )
+  `,
+    `
+    CREATE TABLE IF NOT EXISTS spin_history (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+      choice_name VARCHAR(128) NOT NULL,
+      choice_weight INT NOT NULL,
+      snapshot_json TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL
+    )
+  `,
+    `
+    CREATE INDEX IF NOT EXISTS idx_spin_history_user_created
+      ON spin_history (user_id, created_at)
+  `,
+    `
+    CREATE TABLE IF NOT EXISTS match3_profiles (
+      user_id BIGINT NOT NULL PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+      level INT NOT NULL,
+      exp INT NOT NULL,
+      total_exp INT NOT NULL,
+      energy INT NOT NULL,
+      energy_daily_cap INT NOT NULL,
+      highest_unlocked_level INT NOT NULL,
+      active_skin_id VARCHAR(64) NOT NULL DEFAULT '',
+      energy_updated_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL
+    )
+  `,
+    `
+    CREATE TABLE IF NOT EXISTS match3_level_progress (
+      user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+      level_id INT NOT NULL,
+      first_challenged SMALLINT NOT NULL,
+      cleared SMALLINT NOT NULL,
+      clear_count INT NOT NULL,
+      best_score INT NOT NULL,
+      best_stars INT NOT NULL,
+      best_time_left INT NOT NULL,
+      first_clear_at TIMESTAMPTZ NULL,
+      last_played_at TIMESTAMPTZ NULL,
+      PRIMARY KEY (user_id, level_id)
+    )
+  `,
+    `
+    CREATE TABLE IF NOT EXISTS match3_skin_cards (
+      user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+      skin_id VARCHAR(64) NOT NULL,
+      owned SMALLINT NOT NULL,
+      active SMALLINT NOT NULL,
+      copies INT NOT NULL,
+      fragments INT NOT NULL,
+      unlocked_at TIMESTAMPTZ NULL,
+      PRIMARY KEY (user_id, skin_id)
+    )
+  `,
+    `
+    CREATE TABLE IF NOT EXISTS match3_albums (
+      user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+      album_id VARCHAR(64) NOT NULL,
+      activated SMALLINT NOT NULL,
+      reward_claimed SMALLINT NOT NULL,
+      activated_at TIMESTAMPTZ NULL,
+      reward_claimed_at TIMESTAMPTZ NULL,
+      PRIMARY KEY (user_id, album_id)
+    )
+  `,
+    `
+    CREATE TABLE IF NOT EXISTS match3_sessions (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+      level_id INT NOT NULL,
+      energy_cost INT NOT NULL,
+      first_challenge SMALLINT NOT NULL,
+      seed INT NOT NULL,
+      status VARCHAR(20) NOT NULL,
+      started_at TIMESTAMPTZ NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      finished_at TIMESTAMPTZ NULL
+    )
+  `,
+    `
+    CREATE INDEX IF NOT EXISTS idx_match3_sessions_user_status
+      ON match3_sessions (user_id, status)
+  `,
+    `
+    CREATE TABLE IF NOT EXISTS match3_results (
+      id BIGSERIAL PRIMARY KEY,
+      session_id BIGINT NOT NULL,
+      user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+      level_id INT NOT NULL,
+      success SMALLINT NOT NULL,
+      score INT NOT NULL,
+      stars INT NOT NULL,
+      exp_gained INT NOT NULL,
+      rewards_json TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL
+    )
+  `,
+    `
+    CREATE INDEX IF NOT EXISTS idx_match3_results_user_level
+      ON match3_results (user_id, level_id)
+  `,
+  ]);
+}
+
+async function initDb() {
+  pool = createDbAdapter();
+  if (dbDialect === "postgres") {
+    await initPostgresSchema();
+  } else {
+    await initMysqlSchema();
+  }
 }
 
 async function findOrCreateUser(username, password = "") {
@@ -325,14 +499,25 @@ async function findOrCreateUser(username, password = "") {
     throw Object.assign(new Error("username is required"), { status: 400 });
   }
 
-  await pool.execute(
-    `INSERT INTO users (username, password, created_at, updated_at)
-     VALUES (?, ?, NOW(), NOW())
-     ON DUPLICATE KEY UPDATE
-       password = IF(password = '', VALUES(password), password),
-       updated_at = NOW()`,
-    [name, String(password || "").slice(0, 255)]
-  );
+  if (dbDialect === "postgres") {
+    await pool.execute(
+      `INSERT INTO users (username, password, created_at, updated_at)
+       VALUES (?, ?, NOW(), NOW())
+       ON CONFLICT (username) DO UPDATE
+       SET password = CASE WHEN users.password = '' THEN EXCLUDED.password ELSE users.password END,
+           updated_at = NOW()`,
+      [name, String(password || "").slice(0, 255)]
+    );
+  } else {
+    await pool.execute(
+      `INSERT INTO users (username, password, created_at, updated_at)
+       VALUES (?, ?, NOW(), NOW())
+       ON DUPLICATE KEY UPDATE
+         password = IF(password = '', VALUES(password), password),
+         updated_at = NOW()`,
+      [name, String(password || "").slice(0, 255)]
+    );
+  }
   const [rows] = await pool.execute("SELECT id, username FROM users WHERE username = ?", [name]);
   return rows[0];
 }
@@ -360,12 +545,23 @@ async function getWeights(userId) {
 
 async function saveWeights(userId, items) {
   const normalized = normalizeItems(items);
-  await pool.execute(
-    `INSERT INTO user_weight_settings (user_id, settings_json, updated_at)
-     VALUES (?, ?, NOW())
-     ON DUPLICATE KEY UPDATE settings_json = VALUES(settings_json), updated_at = NOW()`,
-    [userId, JSON.stringify(normalized)]
-  );
+  if (dbDialect === "postgres") {
+    await pool.execute(
+      `INSERT INTO user_weight_settings (user_id, settings_json, updated_at)
+       VALUES (?, ?, NOW())
+       ON CONFLICT (user_id) DO UPDATE
+       SET settings_json = EXCLUDED.settings_json,
+           updated_at = NOW()`,
+      [userId, JSON.stringify(normalized)]
+    );
+  } else {
+    await pool.execute(
+      `INSERT INTO user_weight_settings (user_id, settings_json, updated_at)
+       VALUES (?, ?, NOW())
+       ON DUPLICATE KEY UPDATE settings_json = VALUES(settings_json), updated_at = NOW()`,
+      [userId, JSON.stringify(normalized)]
+    );
+  }
   return normalized;
 }
 
@@ -398,19 +594,39 @@ function fragmentValue(skin) {
 
 async function ensureMatch3Profile(userId) {
   const starterSkin = match3SkinCards[0]?.id || "";
-  await pool.execute(
-    `INSERT IGNORE INTO match3_profiles
-       (user_id, level, exp, total_exp, energy, energy_daily_cap, highest_unlocked_level, active_skin_id, energy_updated_at, created_at, updated_at)
-     VALUES (?, 1, 0, 0, 100, 100, 1, ?, NOW(), NOW(), NOW())`,
-    [userId, starterSkin]
-  );
-  if (starterSkin) {
+  if (dbDialect === "postgres") {
     await pool.execute(
-      `INSERT IGNORE INTO match3_skin_cards
-         (user_id, skin_id, owned, active, copies, fragments, unlocked_at)
-       VALUES (?, ?, 1, 1, 1, 0, NOW())`,
+      `INSERT INTO match3_profiles
+         (user_id, level, exp, total_exp, energy, energy_daily_cap, highest_unlocked_level, active_skin_id, energy_updated_at, created_at, updated_at)
+       VALUES (?, 1, 0, 0, 100, 100, 1, ?, NOW(), NOW(), NOW())
+       ON CONFLICT (user_id) DO NOTHING`,
       [userId, starterSkin]
     );
+  } else {
+    await pool.execute(
+      `INSERT IGNORE INTO match3_profiles
+         (user_id, level, exp, total_exp, energy, energy_daily_cap, highest_unlocked_level, active_skin_id, energy_updated_at, created_at, updated_at)
+       VALUES (?, 1, 0, 0, 100, 100, 1, ?, NOW(), NOW(), NOW())`,
+      [userId, starterSkin]
+    );
+  }
+  if (starterSkin) {
+    if (dbDialect === "postgres") {
+      await pool.execute(
+        `INSERT INTO match3_skin_cards
+           (user_id, skin_id, owned, active, copies, fragments, unlocked_at)
+         VALUES (?, ?, 1, 1, 1, 0, NOW())
+         ON CONFLICT (user_id, skin_id) DO NOTHING`,
+        [userId, starterSkin]
+      );
+    } else {
+      await pool.execute(
+        `INSERT IGNORE INTO match3_skin_cards
+           (user_id, skin_id, owned, active, copies, fragments, unlocked_at)
+         VALUES (?, ?, 1, 1, 1, 0, NOW())`,
+        [userId, starterSkin]
+      );
+    }
   }
 
   const [rows] = await pool.execute("SELECT * FROM match3_profiles WHERE user_id = ?", [userId]);
@@ -535,9 +751,16 @@ async function awardMatch3Skin(userId, skinId) {
     return { type: "fragments", skinId, amount: fragments };
   }
   await pool.execute(
-    `INSERT INTO match3_skin_cards (user_id, skin_id, owned, active, copies, fragments, unlocked_at)
-     VALUES (?, ?, 1, 0, 1, 0, NOW())
-     ON DUPLICATE KEY UPDATE owned = 1, copies = copies + 1, unlocked_at = IFNULL(unlocked_at, NOW())`,
+    dbDialect === "postgres"
+      ? `INSERT INTO match3_skin_cards (user_id, skin_id, owned, active, copies, fragments, unlocked_at)
+         VALUES (?, ?, 1, 0, 1, 0, NOW())
+         ON CONFLICT (user_id, skin_id) DO UPDATE
+         SET owned = 1,
+             copies = match3_skin_cards.copies + 1,
+             unlocked_at = COALESCE(match3_skin_cards.unlocked_at, NOW())`
+      : `INSERT INTO match3_skin_cards (user_id, skin_id, owned, active, copies, fragments, unlocked_at)
+         VALUES (?, ?, 1, 0, 1, 0, NOW())
+         ON DUPLICATE KEY UPDATE owned = 1, copies = copies + 1, unlocked_at = IFNULL(unlocked_at, NOW())`,
     [userId, skinId]
   );
   return { type: "skin", skin };
@@ -566,22 +789,39 @@ async function startMatch3Session(userId, levelId) {
     [energyCost, userId]
   );
   await pool.execute(
-    `INSERT INTO match3_level_progress
-       (user_id, level_id, first_challenged, cleared, clear_count, best_score, best_stars, best_time_left, last_played_at)
-     VALUES (?, ?, 1, 0, 0, 0, 0, 0, NOW())
-     ON DUPLICATE KEY UPDATE first_challenged = 1, last_played_at = NOW()`,
+    dbDialect === "postgres"
+      ? `INSERT INTO match3_level_progress
+           (user_id, level_id, first_challenged, cleared, clear_count, best_score, best_stars, best_time_left, last_played_at)
+         VALUES (?, ?, 1, 0, 0, 0, 0, 0, NOW())
+         ON CONFLICT (user_id, level_id) DO UPDATE
+         SET first_challenged = 1,
+             last_played_at = NOW()`
+      : `INSERT INTO match3_level_progress
+           (user_id, level_id, first_challenged, cleared, clear_count, best_score, best_stars, best_time_left, last_played_at)
+         VALUES (?, ?, 1, 0, 0, 0, 0, 0, NOW())
+         ON DUPLICATE KEY UPDATE first_challenged = 1, last_played_at = NOW()`,
     [userId, level.id]
   );
 
   const seed = Math.floor(Math.random() * 2147483647);
-  const [result] = await pool.execute(
-    `INSERT INTO match3_sessions
-       (user_id, level_id, energy_cost, first_challenge, seed, status, started_at, expires_at)
-     VALUES (?, ?, ?, ?, ?, 'started', NOW(), DATE_ADD(NOW(), INTERVAL ? SECOND))`,
-    [userId, level.id, energyCost, isFirstChallenge ? 1 : 0, seed, level.timeLimitSec + 15]
-  );
+  const [result] =
+    dbDialect === "postgres"
+      ? await pool.execute(
+          `INSERT INTO match3_sessions
+             (user_id, level_id, energy_cost, first_challenge, seed, status, started_at, expires_at)
+           VALUES (?, ?, ?, ?, ?, 'started', NOW(), NOW() + (? * INTERVAL '1 second'))
+           RETURNING id`,
+          [userId, level.id, energyCost, isFirstChallenge ? 1 : 0, seed, level.timeLimitSec + 15]
+        )
+      : await pool.execute(
+          `INSERT INTO match3_sessions
+             (user_id, level_id, energy_cost, first_challenge, seed, status, started_at, expires_at)
+           VALUES (?, ?, ?, ?, ?, 'started', NOW(), DATE_ADD(NOW(), INTERVAL ? SECOND))`,
+          [userId, level.id, energyCost, isFirstChallenge ? 1 : 0, seed, level.timeLimitSec + 15]
+        );
+  const sessionId = dbDialect === "postgres" ? result[0].id : result.insertId;
 
-  return { sessionId: result.insertId, seed, energyCost, firstChallenge: isFirstChallenge, level };
+  return { sessionId, seed, energyCost, firstChallenge: isFirstChallenge, level };
 }
 
 async function finishMatch3Session(userId, sessionId, result) {
@@ -621,15 +861,25 @@ async function finishMatch3Session(userId, sessionId, result) {
 
   const levelUp = await applyMatch3Exp(userId, expGained);
   await pool.execute(
-    `UPDATE match3_level_progress
-     SET cleared = GREATEST(cleared, ?),
-         clear_count = clear_count + ?,
-         best_score = GREATEST(best_score, ?),
-         best_stars = GREATEST(best_stars, ?),
-         best_time_left = GREATEST(best_time_left, ?),
-         first_clear_at = IF(first_clear_at IS NULL AND ? = 1, NOW(), first_clear_at),
-         last_played_at = NOW()
-     WHERE user_id = ? AND level_id = ?`,
+    dbDialect === "postgres"
+      ? `UPDATE match3_level_progress
+         SET cleared = GREATEST(cleared, ?),
+             clear_count = clear_count + ?,
+             best_score = GREATEST(best_score, ?),
+             best_stars = GREATEST(best_stars, ?),
+             best_time_left = GREATEST(best_time_left, ?),
+             first_clear_at = CASE WHEN first_clear_at IS NULL AND ? = 1 THEN NOW() ELSE first_clear_at END,
+             last_played_at = NOW()
+         WHERE user_id = ? AND level_id = ?`
+      : `UPDATE match3_level_progress
+         SET cleared = GREATEST(cleared, ?),
+             clear_count = clear_count + ?,
+             best_score = GREATEST(best_score, ?),
+             best_stars = GREATEST(best_stars, ?),
+             best_time_left = GREATEST(best_time_left, ?),
+             first_clear_at = IF(first_clear_at IS NULL AND ? = 1, NOW(), first_clear_at),
+             last_played_at = NOW()
+         WHERE user_id = ? AND level_id = ?`,
     [success ? 1 : 0, success ? 1 : 0, score, stars, timeLeft, firstClear ? 1 : 0, userId, level.id]
   );
   await pool.execute(
@@ -666,9 +916,15 @@ async function activateMatch3Album(userId, albumId) {
   );
   if (rows.length < album.skinIds.length) throw Object.assign(new Error("album is not complete"), { status: 403 });
   await pool.execute(
-    `INSERT INTO match3_albums (user_id, album_id, activated, reward_claimed, activated_at)
-     VALUES (?, ?, 1, 0, NOW())
-     ON DUPLICATE KEY UPDATE activated = 1, activated_at = IFNULL(activated_at, NOW())`,
+    dbDialect === "postgres"
+      ? `INSERT INTO match3_albums (user_id, album_id, activated, reward_claimed, activated_at)
+         VALUES (?, ?, 1, 0, NOW())
+         ON CONFLICT (user_id, album_id) DO UPDATE
+         SET activated = 1,
+             activated_at = COALESCE(match3_albums.activated_at, NOW())`
+      : `INSERT INTO match3_albums (user_id, album_id, activated, reward_claimed, activated_at)
+         VALUES (?, ?, 1, 0, NOW())
+         ON DUPLICATE KEY UPDATE activated = 1, activated_at = IFNULL(activated_at, NOW())`,
     [userId, album.id]
   );
   return album;

@@ -8,13 +8,15 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: DB_HOST
-        sync: false
-      - key: DB_PORT
-        value: 3306
-      - key: DB_NAME
-        value: eat_turntable
-      - key: DB_USER
-        sync: false
-      - key: DB_PASSWORD
-        sync: false
+      - key: DB_CLIENT
+        value: postgres
+      - key: DATABASE_URL
+        fromDatabase:
+          name: match-3-game-db
+          property: connectionString
+
+databases:
+  - name: match-3-game-db
+    databaseName: eat_turntable
+    user: eat_game
+    plan: free

@@ -26,13 +26,52 @@ const defaultItems = [
   { name: "牛肉拉面", weight: 3, image: DEFAULT_IMAGE },
 ];
 
-const match3Tiles = [
-  { id: "heart", name: "甜心", image: "/resources/icon/甜心头像-icon-256x256.png" },
-  { id: "mint", name: "薄荷", image: "/resources/icon/甜心头像-icon-256x256%20(1).png" },
-  { id: "berry", name: "莓果", image: "/resources/icon/甜心头像-icon-256x256%20(2).png" },
-  { id: "sun", name: "暖阳", image: "/resources/icon/甜心头像-icon-256x256%20(3).png" },
-  { id: "star", name: "星星", image: "/resources/icon/甜心头像-icon-256x256%20(4).png" },
+const preferredIconFiles = [
+  "甜心头像-icon-256x256.png",
+  "甜心头像-icon-256x256 (1).png",
+  "甜心头像-icon-256x256 (2).png",
+  "甜心头像-icon-256x256 (3).png",
+  "甜心头像-icon-256x256 (4).png",
 ];
+
+const preferredIconMeta = new Map([
+  ["甜心头像-icon-256x256.png", { id: "heart", name: "甜心" }],
+  ["甜心头像-icon-256x256 (1).png", { id: "mint", name: "薄荷" }],
+  ["甜心头像-icon-256x256 (2).png", { id: "berry", name: "莓果" }],
+  ["甜心头像-icon-256x256 (3).png", { id: "sun", name: "暖阳" }],
+  ["甜心头像-icon-256x256 (4).png", { id: "star", name: "星星" }],
+]);
+
+function tileIdFromFile(fileName, index) {
+  const base = path.basename(fileName, path.extname(fileName)).replace(/-icon-256x256$/i, "");
+  const id = base.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 48);
+  return id || `icon_${index + 1}`;
+}
+
+function loadMatch3Tiles() {
+  const iconDir = path.resolve(CLIENT_ROOT, "resources/icon");
+  let files = [...preferredIconFiles];
+  try {
+    const discovered = fs
+      .readdirSync(iconDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && /\.(png|jpe?g|webp)$/i.test(entry.name))
+      .map((entry) => entry.name)
+      .sort((a, b) => a.localeCompare(b, "zh-CN"));
+    files = [...preferredIconFiles, ...discovered.filter((file) => !preferredIconMeta.has(file))];
+  } catch {
+    // Keep the built-in defaults when the client repository is not present yet.
+  }
+  return files.map((file, index) => {
+    const meta = preferredIconMeta.get(file);
+    return {
+      id: meta?.id || tileIdFromFile(file, index),
+      name: meta?.name || `糖果伙伴 ${index - preferredIconFiles.length + 1}`,
+      image: `/resources/icon/${encodeURIComponent(file)}`,
+    };
+  });
+}
+
+const match3Tiles = loadMatch3Tiles();
 
 const match3SkinCards = [
   ["zodiac_aries", "白羊座", "constellation/150aee206f7ed5fabfa8724ac2419d70-card-512x768.png", "150aee206f7ed5fabfa8724ac2419d70-slap-1024x1024.png"],
@@ -70,10 +109,14 @@ const match3Albums = [
 
 const match3Levels = Array.from({ length: 12 }, (_, index) => {
   const level = index + 1;
+  const tileCount = Math.min(match3Tiles.length, 4 + Math.floor(index / 3));
+  const tileOffset = match3Tiles.length ? (index * 2) % match3Tiles.length : 0;
+  const tileIds = Array.from({ length: tileCount }, (_, tileIndex) => match3Tiles[(tileOffset + tileIndex) % match3Tiles.length].id);
   return {
     id: level,
     name: `星糖试炼 ${level}`,
-    tileCount: Math.min(5, 3 + Math.floor(index / 3)),
+    tileCount,
+    tileIds,
     timeLimitSec: Math.max(55, 110 - index * 4),
     moveLimit: Math.max(18, 30 - Math.floor(index / 2)),
     targetScore: 900 + index * 420,
